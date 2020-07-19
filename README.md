@@ -22,5 +22,5 @@ You can get all usage via `-h` parameter, the script support following parameter
 
 # Distribution
 
-Every website has their own m3u8 files with different, it may make get-m3u8-sh can't download m3u8 video successfully. You can create a PR and upload the m3u8 files
-you meet to <i>demo</i> directory and improve the script. Please rename your m3u8 file in numerical order before committing！
+Every website has their own m3u8 files with different formats and encrypt methods, it may make get-m3u8-sh can't download m3u8 video successfully. You can create a 
+PR and upload the m3u8 files you meet to <i>m3u8</i> directory and improve the script. Please rename your m3u8 file in numerical order before committing！
