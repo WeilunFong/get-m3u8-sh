@@ -30,16 +30,18 @@ done
 # Get parameters
 while test $# -gt 0 ; do
     case $1 in
+        -k | --keep)
+            iskeep=true; shift 1 ;;
         -m | --m3u8)
-            m3u8="$2"; shift 2;;
+            m3u8="$2"; shift 2 ;;
         -t | --task | --thread)
             thread="$2"; shift 2 ;;
         -o | --out |--output)
             out="$2" ; shift 2 ;;
         --help | -h )
-            echo "$usage"; return 0 ;;
+            echo "$usage"; exit 0 ;;
         --version | -v )
-            echo "$version" && return 0 ;;
+            echo "$version" && exit 0 ;;
         -- )
             shift; break ;;
         - )
@@ -70,14 +72,29 @@ else
 fi
 cd ts
 
+# Collect important parameters
+
+# [1] filename
 f_m3u8="`echo $m3u8 | awk -F '/' '{print $NF}'`"
+
+# [2] protocol type
+if [ -n "`echo $m3u8 | grep ^https`" ]; then
+    protocol=https
+else
+    protocol=http
+fi
+
+# [3] root url & url
+rooturl="`echo $m3u8 | awk -F '//' '{print $2}' | awk -F '/' '{print $1}'`"
+rootpath="`echo $m3u8 | awk -F '//' '{print $2}' | sed s/${rooturl}//g | sed s/${f_m3u8}//g`"
 url="`echo $m3u8 | awk -F "${f_m3u8}" '{print $1}'`"
 
-# Obtain root url
-echo " - Root URL: $url"
-echo " <m3u8> $f_m3u8 "
+echo " - Root URL : $rooturl"
+echo " - Root path: $rootpath"
+echo " - URL      : $url"
+echo " - m3U8     : $m3u8 "
 
-# Obtain key
+# [4] key
 wget -t 3 -q $m3u8
 if [ $? -ne 0 ]; then
     echo "$0:error: can't download target m3u8 file ..." && exit 0
@@ -91,7 +108,7 @@ do
 done
 
 if [ -n "$f_key" ]; then
-    echo " <key>  $f_key"
+    echo " - key     :  $url/$f_key"
     wget -t 3 -q $url/$f_key
     if [ $? -ne 0 ]; then
         echo "$0:error: can't download target key file ..." && exit 0
@@ -99,12 +116,13 @@ if [ -n "$f_key" ]; then
 fi
 
 # Obtain playlist
-echo " - Obtain playlist"
 playlist="`cat $f_m3u8 | grep "\.ts$"`"
-playlist_a=(${playlist})  
+playlist_a=(${playlist})
 playlist_n="`cat $f_m3u8 | grep "\.ts$" | wc -l`"
 n=`expr $playlist_n / $thread`
 m=`expr $playlist_n % $thread`
+
+echo " - ts number: $playlist_n"
 
 # Download .ts files
 # ----------------------------------------
@@ -117,6 +135,15 @@ m=`expr $playlist_n % $thread`
 # download threads/tasks work
 # ----------------------------------------
 echo " - Download .ts files"
+
+if [ -n "`echo ${playlist_a[0]} | grep ^/`" ]; then
+    prefix=${protocol}://${rooturl}
+    prefix_type=absolute
+else
+    prefix=${protocol}://${rooturl}${rootpath}
+    prefix_type=releative
+fi
+
 for((i=0;i<$n;i++))
 do
     for((j=0;j<$thread;j++))
@@ -124,9 +151,9 @@ do
     {
         index=`expr $i \* $thread + $j`
         echo " > download ${playlist_a[${index}]}"
-        wget -q $url/${playlist_a[${index}]}
-        if [ $? -ne 0 ]; then
-            echo "$0:error: failed to download ${playlist_a[${index}]}" && exit 1
+        wget --no-check-certificate -q -t 3 -T 5 $prefix/${playlist_a[${index}]}
+	    if [ $? -ne 0 -o ! -f "`echo ${playlist_a[${index}]} | awk -F '/' '{print $NF}'`" ]; then
+            echo "failed to download ${playlist_a[${index}]}" >&2
         fi
     }&
     done
@@ -139,14 +166,26 @@ if [ $m -ne 0 ]; then
     {
         index=`expr $n \* $thread + $i - 1`
         echo " > download ${playlist_a[${index}]}"
-        wget -q $url/${playlist_a[${index}]}
+        wget -q $prefix/${playlist_a[${index}]}
     }&
     done
     wait
 fi
 
-# Merget & Convert
+if [ "$prefix_type" == absolute ]; then
+    rootpath_s=$(echo $rootpath | sed 's/\//\\\//g')
+    echo "$rootpath_s"
+    cat $f_m3u8 | sed "s/${rootpath_s}//g" > ${f_m3u8}.new
+    mv $f_m3u8 ${f_m3u8}.bak
+    mv ${f_m3u8}.new $f_m3u8
+fi
+
+# Merge & Convert
 echo " - Merge and convert to .mp4 format by ffmpeg "
 ffmpeg -allowed_extensions ALL -i $f_m3u8 -c copy $out > /dev/null
 mv $out ..
-cd - > /dev/null && rm -rf ts
+cd - > /dev/null
+
+if [ "iskeep" != true ]; then
+    rm -rf ts
+fi
